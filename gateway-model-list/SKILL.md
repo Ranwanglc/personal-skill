@@ -95,3 +95,16 @@ TOTAL: 191
   change any config.
 - If no gateway provider/key is found in config, tell the user their OpenClaw
   config has no provider pointing at `llm-gateway.mlamp.cn` — they need to add one.
+
+## Environment notes (gotchas)
+
+- **TLS cert verify on python.org framework builds:** some Python installs ship
+  without a working CA store and throw `CERTIFICATE_VERIFY_FAILED`. The script
+  auto-retries once with an unverified context **only for the hardcoded,
+  already-trusted gateway host**, and warns on stderr. To fix it properly, run
+  `/Applications/Python\ 3.x/Install\ Certificates.command` or
+  `pip install certifi`. The manual `curl` fallback is unaffected.
+- **github.com blocked / clone fails:** if `git clone` can't reach github, pull
+  the two files directly from the raw CDN, e.g.
+  `curl -sO https://raw.githubusercontent.com/Ranwanglc/personal-skill/main/gateway-model-list/SKILL.md`
+  (and likewise for `scripts/list_models.py`), then drop them into your skills dir.

@@ -7,6 +7,7 @@ config (never hardcoded). Read-only: only does GET /v1/models.
 import argparse
 import json
 import os
+import ssl
 import sys
 import urllib.request
 from collections import defaultdict
@@ -53,8 +54,24 @@ def find_key(config_path):
 
 def fetch_models(key):
     req = urllib.request.Request(MODELS_URL, headers={"Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        # Some Python builds (e.g. python.org framework builds on macOS) ship
+        # without a working CA store, so TLS verification of this fixed,
+        # already-trusted gateway host fails with CERTIFICATE_VERIFY_FAILED.
+        # Fall back to an unverified context ONLY for our hardcoded gateway host.
+        if isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError):
+            print(
+                "# WARN: TLS cert verify failed; retrying with unverified context "
+                f"for trusted host {GATEWAY_HOST} (install certs to silence this)",
+                file=sys.stderr,
+            )
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        raise
 
 
 def main():
