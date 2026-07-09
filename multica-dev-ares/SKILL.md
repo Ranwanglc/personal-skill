@@ -68,7 +68,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 ## 1. 铁律（全程强制）
 
 1. **状态回报靠 multica 自身出站 webhook**：multica issue 到终态时由 multica 平台主动回报状态到当前 octo surface。skill **不在** issue prompt 里塞任何手动回写（不 `curl webhook`、不调 `octo_hook.py`）。执行 agent 只管干活 + 按流程推进 issue 状态机，回报交给 multica。
-2. **巡检核心 = 每 30 分钟用 multica-cli 全量筛查当前工作区所有在途 issue（不是盯单个）**（老板 2026-07-09 固化）：mulica 与本 agent 同机，巡检员用 `multica issue list --output json` / `issue runs <id>` 直查真实状态。判据：**最新执行日志(run) 超 20 分钟没动 且 非执行中状态 → 可能需要踢一下**（STALE_MIN=20）。处理手法见 Phase 3。⚠必须是当前工作区的**全量筛查**，绝不能窄化成只盯一个 issue 的 watcher。
+2. **巡检核心 = 每 30 分钟用 multica-cli 全量筛查当前工作区所有在途 issue（只查不派，不盯单个）**（老板 2026-07-09 固化）：mulica 与本 agent 同机，巡检员用 `multica issue list --output json` / `issue runs <id>` 直查真实状态。判据：**最新执行日志(run) 超 20 分钟没动 且 非执行中状态 → 可能需要踢一下**（STALE_MIN=20）。⚠**巡检员只负责「查」（出结论+证据），任务委派/处置（rerun/催办/重派/关单/cancel-task）全部交 PM，巡检员不自己动手**（老板 2026-07-09 固化）。处理手法见 Phase 3。⚠必须是当前工作区的**全量筛查**，绝不能窄化成只盯一个 issue 的 watcher。
 3. **状态板存当前聊天 surface**（持久）：PM 把每个 issue 的登记行（issue_id / 类型 / assignee / 关联PR / status / 派单时刻）写进当前 surface 状态板（父群 `group.md` / 子区 `thread.md`），session reset 不丢。
 4. **PM 必须是群 bot 管理员**（要写当前聊天状态板 group.md/thread.md）；开 skill 前自检，失败显式报错不静默。
 5. **角色分配靠 PM 对成员的了解推断**：`group-members` 无 skill 字段，PM 按已知能力推断分配，**必须标注「基于推断，可能不准，请校正」**。不在状态板维护成员能力登记表。
@@ -150,7 +150,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 2. 每轮固定动作：
    - **单飞锁**（防并发：未过期锁→no-op 退出，过期→接管）。
    - **用 `multica-cli` 全量扫当前在途 issue**，按 §5.1 stale-scan 规则算每个的 idle_minutes，揪出 stalled（最新 run idle ≥ STALE_MIN(20) 且无在途 run）。
-   - **救活手法**：见 Phase 3（rerun / comment 催 / 报人）。
+   - **救活/处置 = PM 的活**：巡检员只把停滞结论（哪个/为什么/证据）报给 PM；**巡检员不自己 rerun/催办/重派/关单**。PM 收到后才执行处置（见 Phase 3）。
    - 读/更新**当前 surface 状态板**（`group-md-read`/`thread-md-read`/`-update`），在当前 surface 催办；上游失败→@用户报人。
    - **心跳（强制）**：即使 stale_count==0 也发一条心跳（`✅ 巡检（scanned_at ...）无停滞。active N 个`），让「静默失败」能和「干净结果」区分开。
    - 清锁。
@@ -173,27 +173,32 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 
 ---
 
-## 6. Phase 3 — 巡检员闭环（核心：处理卡死的 issue）
+## 6. Phase 3 — 巡检闭环（职责分界：巡检员只查、PM 处置）
 
-**巡检的核心目标 = 发现并救活卡死（stuck）的 issue。** 双层：
+**老板 2026-07-09 固化的铁律：巡检员只负责「查」，任务委派/处置（rerun / 催办 / 重派 / 关单 / cancel-task）全部交 PM。** 巡检员绝不自己动手处置。
 
-- **主通道 = multica webhook 自动回报（事件驱动）**：issue 到终态时 multica 自己回报到当前 octo surface → PM/巡检员更新状态板、推进下一环（review→部署→测试，或根因→确认→开发）。正常流转不需要巡检介入。
-- **兜底通道 = cron 定时用 multica-cli 主动查（Phase 2.5）**：专抓**停滞（stalled）**——按 §5.1 stale-scan 规则：最新 run idle≥STALE_MIN(20) 分钟 且 非执行中。这是巡检的主战场。
+双层：
 
-### 停滞判定 + 救活手法（对齐 stale-scan，见 §5.1）
+- **主通道 = multica webhook 自动回报（事件驱动）**：issue 到终态时 multica 自己回报到当前 octo surface → PM 更新状态板、推进下一环。正常流转不需巡检介入。
+- **兜底通道 = cron 定时用 multica-cli 主动查（Phase 2.5）**：专抓**停滞（stalled）**——按 §5.1 stale-scan 规则：最新 run idle≥STALE_MIN(20) 分钟 且 非执行中。**巡检员只出「哪个卡了 + 为什么 + 证据」的结论报给 PM，不自己踢**。
 
-| 停滞症状 | 用 CLI 怎么确认 | 救活手法 |
+### 停滞判定（巡检员出结论）+ 处置手法（PM 执行）
+
+| 停滞症状 | 巡检员用 CLI 怎么确认（只查） | **PM** 处置手法（处置权归 PM） |
 |---|---|---|
-| 在途但零在途 run 且 idle≥20min（`todo` 点火没跑 / 无人 pick up） | `runs <id>` 无在途状态 run + last_activity 已过 20min | `issue rerun <id>` 重新点火；仍不动→报人查 assignee/agent 是否存活 |
-| `in_progress`/`in_review` 最新 run idle≥20min且非执行中 | `runs <id>` 最新 run 已终态 + last_activity(runs∥updated_at max) 超 20min | `issue comment add <id>` 追问进度 + `issue rerun <id>`；连续两轮没动→报人 |
-| `in_review` 挂着但 review run 已 completed（收尾漏流转） | `runs <id>` review run=completed 但 status 未进 done | 以 CLI 为准推进下一环（补上漏掉的流转）+ `comment add` 催收尾 |
-| webhook 回报未到但 CLI 已 done/in_review | CLI 状态与状态板不一致 | 以 CLI 为准更新状态板 + 推进下一环 |
-| 标了 `blocked` | `issue get <id>` 看 blocked 原因 | 不自动判死；在当前 surface @用户报明 blocked 原因 + 受影响下游，等决策 |
-| 豁免白名单（等老板治理/已知挂起） | 在状态板白名单里 | **不催**，只在心跳注明已豁免（见 §5.1） |
-| `cancelled` / 异常终态 | `issue get <id>` | 报人 + 挂起依赖它的下游 |
+| 在途但零在途 run 且 idle≥20min（`todo` 点火没跑 / 无人 pick up） | `runs <id>` 无在途状态 run + last_activity 已过 20min | PM `issue rerun <id>` 重新点火；仍不动→报老板查 assignee/agent 是否存活 |
+| `in_progress`/`in_review` 最新 run idle≥20min且非执行中 | `runs <id>` 最新 run 已终态 + last_activity(runs∥updated_at max) 超 20min | PM `issue comment add <id>` 追问 + `issue rerun <id>`；连续两轮没动→报老板 |
+| `in_review` 挂着但 review run 已 completed（收尾漏流转） | `runs <id>` review run=completed 但 status 未进 done | PM 以 CLI 为准推进下一环（补流转）+ `comment add` 催收尾 |
+| webhook 回报未到但 CLI 已 done/in_review | CLI 状态与状态板不一致 | PM 以 CLI 为准更新状态板 + 推进下一环 |
+| 父单等子单（子单未全完成，父单 idle 超阈） | 子单还有 running/in_review 未 done | **不是真停滞**，巡检员不报停滞、PM 不踢（这是正常编排） |
+| 子单完成但没 @leader，leader 没醒、父单卡在汇总前 | 子单均 completed/in_review、父单 leader run 无新触发 | PM `issue rerun <父单>` 踢醒 leader（或提醒子单显式 @leader） |
+| 标了 `blocked` | `issue get <id>` 看 blocked 原因 | PM 不自动判死；@老板报明原因 + 受影响下游，等决策 |
+| 豁免白名单（等老板治理/已知挂起） | 在状态板白名单里 | **不报不催**，巡检员只在心跳注明已豁免（见 §5.1） |
+| `cancelled` / 异常终态 | `issue get <id>` | PM 报老板 + 挂起依赖它的下游 |
 
-- **巡检员职责**：**每 30 分钟用 multica-cli 全量筛查当前工作区所有在途 issue**（不是盯单个），专治停滞（最新 run idle≥20min 且非执行中）；正常流转交给 webhook。
-- **失败处理**：上游 issue 标 blocked/失败 → 下游依赖它的 issue **不自动判死**，PM 挂起下游 + 在**当前 surface** @用户说明失败上游和受影响下游范围，**等用户决策**，绝不自动级联失败。
+- **巡检员职责（只查）**：**每 30 分钟用 multica-cli 全量筛查当前工作区所有在途 issue**（不是盯单个），识别停滞/故障（最新 run idle≥20min 且非执行中），**只给出「哪个卡了/为什么/证据」的结论报给 PM**。⚠**绝不自己做 rerun/催办/重派/关单/cancel**（那是 PM 的活）。正常流转交给 webhook。
+- **PM 职责（处置）**：收到巡检员结论后，由 PM 决定并执行 rerun / 催办 / 重派 / 关单 / cancel-task；重大处置（关单/重派）先报老板。
+- **失败不自动级联**：上游 issue 标 blocked/失败 → 下游依赖它的 issue **不自动判死**，PM 挂起下游 + 在当前 surface @老板说明失败上游和受影响下游范围，等决策。
 
 ---
 
@@ -235,4 +240,5 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 - **PM**：octo 群里的讨论收敛成自包含 multica 工单（背景/约束/验收/关联仓库分支/GitHub-GitLab issue/push fork/开 draft PR 承载 review），派给对应 squad/agent，状态登记状态板并 @派单人。只调度不写代码。发号拍板钉死不横跳。绝不替老板拍板、绝不自动 merge、绝不在开发那刻提正式 PR（只开 draft）；测试全绿+老板确认后才 `gh pr ready` 转正式 PR。BUGFIX 先派根因定位独立工单，根因回来等老板/自己确认再派修复。
 - **产品专员**：需求分析 + PRD（含验收标准），先澄清再动笔，不臆测扩展，先方案后实施等 approval。
 - **设计师**：基于产品需求出 UI/视觉设计与原型，迭代听反馈，产出设计系统避免通用 AI 审美。
-- **巡检员**：核心 = 处理停滞 issue。**每 30 分钟用 multica-cli 全量扫当前工作区所有在途 issue（不是盯单个）**，判定对齐 stale-scan 规则（只巡 {todo,in_progress,in_review,blocked}；最新 run 执行中不算停滞；last_activity=runs∥updated_at 取 max；**最新 run idle≥20min 且非执行中 判 stalled**；零 run 边界也纳入；无停滞也发心跳）。救活手法 = rerun + comment 催 + 报人（见 Phase 3 表）。豁免白名单（等老板治理）不催。失败不自动级联、挂起报人等决策。巡检员不能是 PM 本人。被指定后 PM 会 @ 他交代巡检任务，已有相符定时器则复用。
+- **巡检员**：核心 = 只查不派。**每 30 分钟用 multica-cli 全量扫当前工作区所有在途 issue（不是盯单个）**，判定对齐 stale-scan 规则（只巡 {todo,in_progress,in_review,blocked}；最新 run 执行中不算停滞；last_activity=runs∥updated_at 取 max；**最新 run idle≥20min 且非执行中 判 stalled**；零 run 边界也纳入；父单等子单不误报；无停滞也发心跳）。**只出「哪个卡了/为什么/证据」结论报给 PM，绝不自己 rerun/催办/重派/关单（那是 PM 的活）**。豁免白名单（等老板治理）不报不催。巡检员不能是 PM 本人。被指定后 PM 会 @ 他交代巡检任务，已有相符定时器则复用。
+- **PM（处置方）**：收到巡检员结论后，由 PM 决定并执行 rerun / 催办 / 重派 / 关单 / cancel-task；重大处置（关单/重派）先报老板。
