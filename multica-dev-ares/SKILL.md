@@ -51,9 +51,15 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 
 **状态回报 = multica 自身 webhook（现行方案）**：multica issue 到终态（done/blocked/in_review 等）时，由 **multica 平台自己的出站 webhook** 把状态回报出来，落到当前 octo surface。skill **不再**要求执行 agent 在工单 prompt 末尾手动 `curl` 或调脚本回写。PM/巡检员据此推进下一环，并把状态登记进当前 surface 状态板。
 
-**当前已建 multica 资源**（用户已创建，skill 默认对接，可被用户覆盖）：
-- squad：`frontend-dev`、`backend-dev`、`reviewer`、`tester`
-- 单 agent：`<deploy-agent>`（本地打包部署工程师）⚠️ 占位，按你的环境替换
+**当前已建 multica 资源**（真实状态，skill 默认对接，可被用户覆盖）：
+
+| squad | id | 成员 | 职责 |
+|---|---|---|---|
+| **开发团队-dev** | `7d5e63f4-8ddd-4296-937f-2c51d653f2bb` | leader `dev-work01` + developer `dev-work02`/`dev-work03` | 前端/后端/脚本开发 **+ 本地 docker 部署验证**（部署归 dev 小队，无独立部署 agent） |
+| **审核小队-review** | `772b69d6-a1f3-4f9c-88ee-04df2fdeb4b6` | leader `review-lead01` + reviewer `dev-review01-gpt`/`dev-review02-glm`（双引擎独立评审） | 方案评审 + 代码评审两道独立关口 |
+| **测试小队-test** | `a399e803-d9ba-465d-86f0-ca960686a1e9` | leader `test-lead01` + tester `dev-test01` | 构建/单测/集成/回归验证，给 PASS/FAIL 裁决 |
+
+⚠️ **部署无独立 agent**：打包部署（本地 docker）是**开发团队-dev 的职责之一**（dev 小队 instructions 第6步「本地部署验证」）。派部署工作时 assignee 用 dev 小队，不要找 `<deploy-agent>`。
 
 ---
 
@@ -82,7 +88,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 0. **判定当前聊天 surface**（父群 or 子区，见开头「当前聊天 surface」表）——后续状态板读写、巡检催办全按它走。
 1. **用户已指定 PM**。
 2. **PM 自检 bot-admin**：写**当前聊天状态板**（`group-md-update` 或 `thread-md-update`）需管理员权限，失败显式报错（否则状态管理全程死掉却看似在跑）。
-3. **multica CLI 可用**：`~/bin/multica issue list --output json` 探活；确认 squad（frontend-dev/backend-dev/reviewer/tester）和部署 agent `<deploy-agent>` 存在。
+3. **multica CLI 可用**：`multica issue list --output json` 探活（CLI 在 `/usr/local/bin/multica`，也可 `~/bin/multica`）；确认三个 squad（开发团队-dev / 审核小队-review / 测试小队-test）存在（部署归 dev 小队，无独立部署 agent）。
 4. **确认 multica 出站 webhook 已配置**（状态回报通道）：确认 multica 侧 webhook 会把 issue 终态回报到当前 octo surface。若未配/不确定，回报靠巡检 CLI 兜底，但应显式告知用户「回报只走巡检查询」。
 
 ---
@@ -210,7 +216,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 
 ## 9. 落地建议（分阶段）
 
-1. **地基先验**：先用现有 squad（frontend-dev/backend-dev/reviewer/tester + 部署 agent `<deploy-agent>`）跑通一条最短 BUGFIX 链路（octo 报 bug→根因定位工单→multica webhook 回报根因→PM 确认→修复开发→review→部署→测试），确认 multica webhook 回报真通 + 巡检 CLI 能揪出卡死 issue。
+1. **地基先验**：先用现有三个 squad（开发团队-dev / 审核小队-review / 测试小队-test，部署归 dev 小队）跑通一条最短 BUGFIX 链路（octo 报 bug→根因定位工单→multica webhook 回报根因→PM 确认→修复开发→review→dev 小队本地部署→测试），确认 multica webhook 回报真通 + 巡检 CLI 能揪出卡死 issue。
 2. **再上 FEAT 全链路**：产品/设计 octo 角色就位后跑完整流程（开发→review→部署→测试）。
 3. **角色就位前置**：octo 角色（PM/产品/设计/巡检）的方法论能力由各 agent 自行准备，本 skill 不规定其安装方式。
 

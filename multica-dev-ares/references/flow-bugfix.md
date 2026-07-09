@@ -10,7 +10,7 @@
 4. [octo→multica] 根因认可 → PM 建 **修复开发 issue**（写清根因 + 修法方向 + 影响面 + GitHub/GitLab issue + push fork + 开 draft PR）。
 5. [multica] 开发 agent 修复 → push fork → 开 **draft PR**（`gh pr create --draft`，锁死不可合）。**状态由 multica webhook 自动回报**（含 draft PR 链接）。
 6. [multica] Reviewer 验「真修根因没」：在 draft PR 上 `gh pr review`，false-fix 判定必拉 head 分支 grep 具体 blocker；信 diff 不信 commit message。
-7. [multica] 部署 agent 部署到测试环境。
+7. [multica] **开发团队-dev 本地 docker 部署到测试环境**（部署归 dev 小队）。
 8. [multica] 测试 agent：**先复现原 bug**（确认能复现）→ 在已部署环境应用修复 → 验证 bug 消失 → 跑回归 + 黑盒（确认没引新 bug）。
 9. [octo] PM 回写根因+修复结论，@老板验收。**全绿 + 老板确认后，`gh pr ready <PR>` 将 draft 转正式 PR**；紧急 bug 可走加急 merge（老板拍板）。
 

@@ -9,8 +9,8 @@
 3. [octo] 设计师出 UI 设计稿/原型（需 UI 时）→ 老板/产品 confirm。
 4. [octo→multica] PM 把 PRD 拆成自包含工单：前端 issue（关联设计稿）+ 后端 issue（关联 API 契约）。**契约/前缀口径等跨端决策先在 octo 由老板拍板，写进工单**。开发类工单必须含对应 GitHub/GitLab issue、push 自己 fork、开 draft PR。
 5. [multica] 前端/后端 agent 接单 → 执行 → 自测 → push 自己 fork → 开 **draft PR**（`gh pr create --draft`，承载逐行 review，**锁死不可合、不触发正式合并**）→ issue 进 in_review。**状态由 multica webhook 自动回报**（含 draft PR 链接）。
-6. [multica] Reviewer 接 review issue（CC+Codex 双引擎）→ 在 draft PR 上逐行 `gh pr review` → 三态结论。CHANGES_REQUESTED→打回 rerun；APPROVED→下一步。
-7. [multica] 部署 agent（`<deploy-agent>`）打包部署到测试环境 → 验证部署成功（健康检查 + 服务起来）。
+6. [multica] **审核小队-review** 接 review issue（`dev-review01-gpt` + `dev-review02-glm` 双引擎独立评审）→ 在 draft PR 上逐行 `gh pr review` → 三态结论。CHANGES_REQUESTED→打回 rerun；APPROVED→下一步。
+7. [multica] **开发团队-dev 本地 docker 部署到测试环境**（部署是 dev 小队职责，无独立部署 agent）→ 验证部署成功（健康检查 + 服务起来）。
 8. [multica] 测试 agent 在已部署的测试环境上：基于 PRD 出测试用例 → 跑用例 + **黑盒测试（真机操作、边界/异常路径、端到端场景）** → 报告。失败→回开发（附复现步骤+截图）；通过→done。
 9. [octo] PM 汇总回写群，@老板验收。**全绿 + 老板确认后，才把 draft PR 转正式**（`gh pr ready <PR>`，此刻才进 merge 候选）；**merge 仍等老板批**。
 

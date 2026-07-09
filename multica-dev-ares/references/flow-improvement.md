@@ -8,7 +8,7 @@
 2. [octo→multica] PM 出开发工单（优化目标 + **回归验收标准** + 不可破坏的现有行为 + GitHub/GitLab issue + push fork + 开 draft PR）。
 3. [multica] 开发 agent 接单 → 执行 → **必须跑回归测试** → push fork → 开 **draft PR**（`gh pr create --draft`，锁死不可合）。**状态由 multica webhook 自动回报**（含 draft PR 链接）。
 4. [multica] Reviewer 在 draft PR 上 `gh pr review`，重点看「有没有破坏现有功能」+ 性能/可维护性。
-5. [multica] 部署 agent 打包部署到测试环境 → 验证部署成功。
+5. [multica] **开发团队-dev 本地 docker 部署到测试环境** → 验证部署成功。
 6. [multica] 测试 agent 在测试环境跑回归用例 + 黑盒回归（重点验「优化没引入退化」）。
 7. [octo] PM 回写，@老板验收。**全绿 + 老板确认后，`gh pr ready <PR>` 将 draft 转正式 PR**，merge 等批。
 
