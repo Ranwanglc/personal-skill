@@ -1,13 +1,13 @@
 ---
 name: "multica-dev-ares"
-description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, dispatches FEAT/IMPROVEMENT/BUGFIX as multica issues; multica's own webhook returns status; patrol uses multica-cli to catch STUCK issues."
+description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, dispatches FEAT/IMPROVEMENT/BUGFIX/RESEARCH/DESIGN as multica issues; multica's own webhook returns status; patrol uses multica-cli to catch STUCK issues."
 ---
 
 # multica-dev-ares
 
 把 **octo（对话/协调/沉淀层）+ multica（无状态执行层）** 的多角色研发团队抽象成一个可复用开发 skill。用户给定 PM，PM 自动组队、确认、然后按任务类型把开发工作拆成自包含 multica issue 派发执行。**状态回报由 multica 自身的出站 webhook 完成**（issue 到终态时 multica 主动回报），skill 不再在每个工单末尾塞手动回写指令。**巡检的核心 = 用 `multica-cli` 直接查、揪出卡死（stuck）的 issue 并救活**（同机可查），配 cron 定时兜底。
 
-触发词：multica 开发团队、多角色研发、octo+multica、派单开发、FEAT/IMPROVEMENT/BUGFIX 流程、组研发团队。
+触发词：multica 开发团队、多角色研发、octo+multica、派单开发、FEAT/IMPROVEMENT/BUGFIX 流程、调研分析/方案设计（RESEARCH/DESIGN）、组研发团队。
 
 **本 skill 是编排 skill**，复用 OpenClaw 已有工具（`octo_management` / `message` / Multica issue CLI `~/bin/multica` / `cron` / `exec`），不造底层能力。设计骨架借鉴 `collab-research`（PM 选人→读成员→提议分工→用户批准→派发→巡检闭环），但执行体换成 multica issue 而非 octo 子区 worker。
 
@@ -26,6 +26,8 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 | 判定任务类型为 FEAT | `references/flow-feat.md` |
 | 判定任务类型为 IMPROVEMENT | `references/flow-improvement.md` |
 | 判定任务类型为 BUG FIX | `references/flow-bugfix.md` |
+| 判定任务类型为 RESEARCH（调研分析） | `references/flow-research.md` |
+| 判定任务类型为 DESIGN（方案设计） | `references/flow-design.md` |
 
 本 SKILL.md 只保留：分层原则 + 铁律 + Phase0/1 组队 + 三流程共同约定与对比 + 巡检闭环 + 汇总 + 工具映射。流程细节与工单模板在上述 reference 文件里，用到再读。
 
@@ -121,16 +123,20 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 - FEAT → `references/flow-feat.md`
 - IMPROVEMENT → `references/flow-improvement.md`
 - BUG FIX → `references/flow-bugfix.md`
+- RESEARCH（调研分析） → `references/flow-research.md`（交付报告，无 PR/部署/测试）
+- DESIGN（方案设计） → `references/flow-design.md`（交付方案文档，无 PR/部署/测试）
 
-### 三流程对比速查（判型用，细节看各自文件）
-| | FEAT | IMPROVEMENT | BUGFIX |
-|---|---|---|---|
-| 产品/设计参与 | 全程 | 看是否涉交互 | 一般不需要 |
-| 验收核心 | 满足 PRD 验收标准 | 不退化（回归优先） | 根因消除 + 不引新 bug |
-| 测试重点 | 用例 + 黑盒全覆盖 | 回归用例 + 黑盒回归 | 先复现原 bug 再验修复 |
-| Review 重点 | 完整性+正确性 | 破坏现有行为没 | 真修根因没（防 false-fix） |
-| 特有环节 | 产品/设计前置 | 回归优先 | 根因定位独立工单 + PM 确认 |
-| 顺序 | 开发→draft PR→review→**部署→测试**→转正式PR | 同 | 根因→确认→开发→draft PR→review→部署→测试→转正式PR |
+> **两类新流程（RESEARCH/DESIGN）是「非代码交付」**：交付物是报告/方案 md，随 webhook 回报，**不 push fork / 不开 PR / 不部署 / 不跑测试**（铁律里「PR 后置/draft 转正式/部署在测试之前」对这两类不适用）；但仍走 multica issue + webhook + 巡检。它俩常作为 FEAT 的**前置**：调研→方案→（获批后）拆开发工单。
+
+### 五流程对比速查（判型用，细节看各自文件）
+| | FEAT | IMPROVEMENT | BUGFIX | RESEARCH（调研） | DESIGN（方案） |
+|---|---|---|---|---|---|
+| 交付物 | 代码 | 代码 | 代码 | 调研报告 md | 方案设计 md |
+| 产品/设计参与 | 全程 | 看是否涉交互 | 一般不需要 | 一般不需要 | 看需求（涉交互拉产品） |
+| 验收核心 | 满足 PRD 验收标准 | 不退化（回归优先） | 根因消除 + 不引新 bug | 结论可信 + 依据可追溯 | 可落地 + 覆盖需求 + 风险标清 |
+| Review 重点 | 完整性+正确性 | 破坏现有行为没 | 真修根因没（防 false-fix） | 结论有据/来源可核/无臆造 | 覆盖需求/契约无歧义/能拆单 |
+| PR/部署/测试 | 有 | 有 | 有 | **无**（报告随 webhook 回报） | **无**（方案随 webhook 回报） |
+| 顺序 | 开发→draft PR→review→**部署→测试**→转正式PR | 同 | 根因→确认→开发→同上 | 调研→出报告→review→老板确认 | 设计→出方案→review→老板拍板（→转 FEAT） |
 
 ---
 
