@@ -6,7 +6,7 @@
 
 每个 issue 用：
 ```
-~/bin/multica issue create --title "..." --description-file <file> --assignee <squad|agent> --status todo
+multica issue create --title "..." --description-file <file> --assignee <squad|agent> --status todo
 ```
 `todo` + agent assignee = 立即点火。
 
