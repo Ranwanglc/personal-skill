@@ -130,18 +130,32 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 
 ## 5. Phase 2.5 — 挂载巡检 cron（必做，派完首批 issue 后）
 
-> 巡检必须有**主动定时机制**去发现卡死的 issue，否则卡死/webhook 漏报永远没人管。参照 `collab-research` 的 arm-patrol-loop。
+> 巡检必须有**主动定时机制**去发现停滞（stalled）的 issue，否则卡死/webhook 漏报永远没人管。参照 `collab-research` 的 arm-patrol-loop。**停滞判定逻辑对齐 Herbin 的 stale-scan 规则**（`multica-squad-ops/scripts/multica_stale_scan.py`，2026-07-09 同步），见下 §5.1。
 
-1. PM/巡检员 `cron add` 一个 **5min isolated 巡检轮**（schedule=every 5min，payload=agentTurn）。payload **自包含**：accountId=`default`、当前 surface 类型（父群/子区）+ channelId、状态板位置（`group.md`/`thread.md`）、各 issue 的「卡死判定阈值」（如 in_progress 超 N 分钟）、催办/救活文案、skill 绝对路径。
+1. PM/巡检员 `cron add` 一个 **isolated 巡检轮**（schedule=every 30min，payload=agentTurn）。payload **自包含**：accountId=`default`、当前 surface 类型（父群/子区）+ channelId、状态板位置（`group.md`/`thread.md`）、停滞阈值 `STALE_MIN=30`、豁免白名单、催办/救活文案、skill 绝对路径。
 2. 每轮固定动作：
    - **单飞锁**（防并发：未过期锁→no-op 退出，过期→接管）。
-   - **用 `multica-cli` 直接查 issue 真实状态**：`~/bin/multica issue list --output json`，对状态板里在途的 issue 逐个核对。
-   - **揪卡死**：`in_progress` 超阈值不动、`todo` 点火后迟迟没进 `in_progress`、标了 `blocked`、webhook 回报超时未到。
+   - **用 `multica-cli` 按 §5.1 stale-scan 规则算每个在途 issue 的 idle_minutes**，揪出 stalled（idle ≥ STALE_MIN 且无在途 run）。
    - **救活手法**：见 Phase 3（rerun / comment 催 / 报人）。
    - 读/更新**当前 surface 状态板**（`group-md-read`/`thread-md-read`/`-update`），在当前 surface 催办；上游失败→@用户报人。
+   - **心跳（强制）**：即使 stale_count==0 也发一条心跳（`✅ 巡检（scanned_at ...）无停滞。active N 个`），让「静默失败」能和「干净结果」区分开。
    - 清锁。
 3. 配 **12h 一次性兜底删除**（`at` + `deleteAfterRun`）防僵尸；jobId 记进当前 surface 状态板。
 4. 一条链路全 done → 末轮自删 cron + 发汇总。
+5. **暂停/恢复**：老板说「暂停巡检」→ `cron` 把该 job disable（paused，不删）；说「恢复」→ 重新 enable。paused 期间不扫描、不报停滞，任务保留。
+
+### 5.1 stale-scan 停滞判定（对齐 Herbin，逐条照做）
+
+巡检**只关心「在途」issue**，判定 stalled 用下面 6 条（阈值 `STALE_MIN=30` 分钟）：
+
+1. **只巡在途**：`status ∈ {todo, in_progress, in_review, blocked}`；`done`/`cancelled` 直接跳过。
+2. **有在途 run 就不算停滞**：对每个在途 issue 拉 `~/bin/multica issue runs <ID> --output json`（runs 最新在前）。只要有任一 run 处于在途状态 `{running, queued, dispatched, pending, in_progress}` → 还在干活，跳过。
+3. **last_activity 取 max**：否则「最后活跃时间」= 所有 run 的 `created_at / started_at / dispatched_at / completed_at` 时间戳，**并上 issue 自身 `updated_at`**，取 `max()`。用 max（而非只看 run 时间）是为了避免「有人评论了但没触发新 run」误报。
+4. **idle 判定**：`idle_minutes = now - last_activity`；`idle ≥ STALE_MIN(30)` → 判 stalled。结果按 idle 降序排。
+5. **零 run 边界**：在途但零 run（一直没被 pick up）的 issue 也可能 stalled——只要 `updated_at` 已过期同样纳入。
+6. **心跳**：即使 `stale_count==0` 也输出一条心跳（见 Phase 2.5 步骤 2）。
+
+**豁免白名单（不催）**：某些在途 issue 是「等老板治理/已知挂起」的，即便 idle 超阈值也**不催办**，只在心跳里注明「N 个在等老板治理已豁免（不催）」。白名单 issue-id 列进当前 surface 状态板，由 PM/老板维护。
 
 ---
 
@@ -150,16 +164,18 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 **巡检的核心目标 = 发现并救活卡死（stuck）的 issue。** 双层：
 
 - **主通道 = multica webhook 自动回报（事件驱动）**：issue 到终态时 multica 自己回报到当前 octo surface → PM/巡检员更新状态板、推进下一环（review→部署→测试，或根因→确认→开发）。正常流转不需要巡检介入。
-- **兜底通道 = cron 定时用 multica-cli 主动查（Phase 2.5）**：专抓**卡死**——webhook 没回报、issue 卡 `in_progress` 太久、`todo` 点火没跑、标了 `blocked`。这是巡检的主战场。
+- **兜底通道 = cron 定时用 multica-cli 主动查（Phase 2.5）**：专抓**停滞（stalled）**——按 §5.1 stale-scan 规则算 idle（last_activity=runs+updated_at 取 max，无在途 run 且 idle≥STALE_MIN(30) 分钟）。这是巡检的主战场。
 
-### 卡死判定 + 救活手法（按类型）
+### 停滞判定 + 救活手法（对齐 stale-scan，见 §5.1）
 
-| 卡死症状 | 用 CLI 怎么确认 | 救活手法 |
+| 停滞症状 | 用 CLI 怎么确认 | 救活手法 |
 |---|---|---|
-| `todo` 点火却没进 `in_progress` | `issue get <id>` 看 status + `runs <id>` 看有没有起跑 | `issue rerun <id>` 重新点火；仍不动→报人查 assignee/agent 是否存活 |
-| `in_progress` 超阈值不动 | `issue get <id>` 看 updated 时间 + `runs <id>` 看有没有产出 | `issue comment add <id>` 追问进度并 `issue rerun <id>`；连续两轮没动→报人 |
-| webhook 回报超时未到（但 CLI 显示已 done/in_review） | CLI 状态与状态板不一致 | 以 CLI 为准更新状态板 + 推进下一环（补上 webhook 漏掉的推进） |
+| 在途但零在途 run 且 idle≥30min（`todo` 点火没跑 / 无人 pick up） | `runs <id>` 无在途状态 run + last_activity 已过 30min | `issue rerun <id>` 重新点火；仍不动→报人查 assignee/agent 是否存活 |
+| `in_progress`/`in_review` idle≥30min且无在途 run | `runs <id>` 最新 run 已终态 + last_activity(runs∥updated_at max) 超 30min | `issue comment add <id>` 追问进度 + `issue rerun <id>`；连续两轮没动→报人 |
+| `in_review` 挂着但 review run 已 completed（收尾漏流转） | `runs <id>` review run=completed 但 status 未进 done | 以 CLI 为准推进下一环（补上漏掉的流转）+ `comment add` 催收尾 |
+| webhook 回报未到但 CLI 已 done/in_review | CLI 状态与状态板不一致 | 以 CLI 为准更新状态板 + 推进下一环 |
 | 标了 `blocked` | `issue get <id>` 看 blocked 原因 | 不自动判死；在当前 surface @用户报明 blocked 原因 + 受影响下游，等决策 |
+| 豁免白名单（等老板治理/已知挂起） | 在状态板白名单里 | **不催**，只在心跳注明已豁免（见 §5.1） |
 | `cancelled` / 异常终态 | `issue get <id>` | 报人 + 挂起依赖它的下游 |
 
 - **巡检员职责**：定时用 multica-cli 巡检在途 issue，专治卡死；正常流转交给 webhook。
@@ -185,7 +201,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 | 查 issue / 状态（巡检核心） | `~/bin/multica issue list --output json` / `issue get <id>` / `issue runs <id>` / `issue status <id> <state>` |
 | 救活卡死 / 重跑 / 中断 | `~/bin/multica issue rerun <id>` / `issue cancel-task <id>` |
 | issue 对话/催进度/补上下文 | `~/bin/multica issue comment add <id> --content "..."` |
-| 挂载巡检 cron | `cron add`（every 5min isolated agentTurn）+ 12h `at` deleteAfterRun 兜底 |
+| 挂载巡检 cron | `cron add`（every 30min isolated agentTurn，对齐 stale-scan STALE_MIN=30）+ 12h `at` deleteAfterRun 兜底 |
 | @成员 | `octo_management group-members` 取 uid → `@[<uid>:<displayName>]`（方括号必需，单冒号，真 32-hex uid） |
 | 群播报/派单/催办 | `message send`（父群或对应子区） |
 | 状态回报（回程） | **multica 自身出站 webhook**（skill 不手动回写）；回报没到靠巡检 CLI 补 |
@@ -205,4 +221,4 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 - **PM**：octo 群里的讨论收敛成自包含 multica 工单（背景/约束/验收/关联仓库分支/GitHub-GitLab issue/push fork/开 draft PR 承载 review），派给对应 squad/agent，状态登记状态板并 @派单人。只调度不写代码。发号拍板钉死不横跳。绝不替老板拍板、绝不自动 merge、绝不在开发那刻提正式 PR（只开 draft）；测试全绿+老板确认后才 `gh pr ready` 转正式 PR。BUGFIX 先派根因定位独立工单，根因回来等老板/自己确认再派修复。
 - **产品专员**：需求分析 + PRD（含验收标准），先澄清再动笔，不臆测扩展，先方案后实施等 approval。
 - **设计师**：基于产品需求出 UI/视觉设计与原型，迭代听反馈，产出设计系统避免通用 AI 审美。
-- **巡检员**：核心 = 处理卡死 issue。用 multica-cli 定时巡检在途 issue，专抓 `todo` 没点火起跑 / `in_progress` 卡太久 / `blocked` / webhook 漏报；救活手法 = rerun + comment 催 + 报人（见 Phase 3 表）。失败不自动级联、挂起报人等决策。巡检员不能是 PM 本人。
+- **巡检员**：核心 = 处理停滞 issue。用 multica-cli 定时（every 30min）巡检在途 issue，判定对齐 stale-scan 规则（只巡 {todo,in_progress,in_review,blocked}；有在途 run 不算停滞；last_activity=runs∥updated_at 取 max；idle≥30min 判 stalled；零 run 边界也纳入；无停滞也发心跳）。救活手法 = rerun + comment 催 + 报人（见 Phase 3 表）。豁免白名单（等老板治理）不催。失败不自动级联、挂起报人等决策。巡检员不能是 PM 本人。
