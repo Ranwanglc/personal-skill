@@ -28,6 +28,8 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 | 判定任务类型为 BUG FIX | `references/flow-bugfix.md` |
 | 判定任务类型为 RESEARCH（调研分析） | `references/flow-research.md` |
 | 判定任务类型为 DESIGN（方案设计） | `references/flow-design.md` |
+| 进入部署环节（本地 docker，起/复用/拆容器） | `references/local-deploy.md` |
+| 进入测试环节（mano-cua 可视化/黑盒测试） | `references/mano-visual-test.md` |
 
 本 SKILL.md 只保留：分层原则 + 铁律 + Phase0/1 组队 + 三流程共同约定与对比 + 巡检闭环 + 汇总 + 工具映射。流程细节与工单模板在上述 reference 文件里，用到再读。
 
@@ -119,7 +121,7 @@ description: "octo+multica dev team (Ares 版): user gives PM; PM forms team, di
 - multica issue 状态机：`backlog → todo(点火) → in_progress → in_review → done`，旁路 `blocked` / `cancelled`。`todo` + agent assignee = 立即触发跑。
 - **状态回报由 multica webhook 自动完成**；PM/巡检员收到回报后更新状态板、推进下一环。回报没到时靠巡检 CLI 主动查（Phase 2.5/3）。
 - 每个开发 issue 完成后开 **draft PR** 并关联（不是正式 PR），review/测试 issue 与开发 issue 绑定。
-- **部署在测试之前**：没部署到测试环境就没法做真机/黑盒测试，顺序固定为「开发 → draft PR → review → 部署 → 测试 →（全绿+老板确认）转正式 PR」。
+- **部署在测试之前**：没部署到测试环境就没法做真机/黑盒测试，顺序固定为「开发 → draft PR → review → 部署 → 测试 →（全绿+老板确认）转正式 PR」。**部署细则**见 `references/local-deploy.md`（复用优先/只构改动/测完即拆/端口段 3010-3019）；**测试细则**见 `references/mano-visual-test.md`（mano-cua 可视化测试 7 步模板，1-3 个用例）。
 - **PR 后置**：开发完只开 draft PR，正式 PR（`gh pr ready`）等测试全绿 + 老板确认。
 
 **PM 先判定任务类型，然后只加载对应那一个流程文件执行**：
