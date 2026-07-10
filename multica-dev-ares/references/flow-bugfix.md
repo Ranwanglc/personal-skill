@@ -15,6 +15,7 @@
 9. [octo] PM 回写根因+修复结论，@老板验收。**全绿 + 老板确认后，`gh pr ready <PR>` 将 draft 转正式 PR**；紧急 bug 可走加急 merge（老板拍板）。
 
 ## 要点
+- **bug-fix project 下的工单 PR 目标 = 上游公开仓库**（老板 2026-07-10 固化）：归入 multica bug-fix project（id a96c2f3c）的工单，**测试完成后可提 PR 到上游公开仓库**（如 Mininglamp-OSS/octo-smart-summary）。开发阶段仍 push fork + 开 draft PR；测试全绿 + 老板确认后 `gh pr ready` 转正式 PR（目标上游），merge 永远等老板拍板。
 - **根因优先**：定位根因是**独立工单**，结论回 octo 等 PM 确认后再开发，不在同一工单里边定位边改。
 - 测试 **先复现原 bug 再验修复** + 跑回归/黑盒确认没引新 bug。
 - Review **验真修根因没**（防 false-fix）。
